@@ -131,11 +131,13 @@ The combination of regime discovery, leakage-safe statistical validation, MCP-or
 
 ## 8. Design Decisions — Resolved
 
-- **Data granularity:** daily, starting point. Price (Nifty/Bank Nifty OHLCV) + India VIX, targeting 10+ years of history to capture multiple real regimes. Intraday granularity is an explicit later phase, only after the daily version is complete and validated — not part of initial scope.
-- **Data source:** NSE archives directly (price, VIX, and bhavcopy/F&O data as needed).
+- **Data granularity:** daily, starting point. Price (Nifty/Bank Nifty OHLCV) + India VIX. Intraday granularity is an explicit later phase, only after the daily version is complete and validated — not part of initial scope.
+- **Data source:** NSE archives directly (price, VIX, and bhavcopy/F&O data as needed). India VIX confirmed manually against NSE's own historical report page as the primary source — automated access (headless browser, NSEpy) is hard-blocked by NSE's bot protection, so this series is pulled manually rather than via scripted evasion.
 - **Prediction target:** direction (primary) — short-horizon up/down/flat on Nifty/Bank Nifty. Volatility is a secondary, regime-context target — it feeds the regime-detection layer and the confidence/abstention decision on the direction call, rather than standing as an independent prediction output.
+- **Training/validation window:** 19 July 2010 – present (~15 years), confirmed as the earliest date NSE's own historical VIX report serves. This is a hard floor — India VIX does not exist as a usable series before this date, regardless of source.
+- **Historical scope:** the entire system (Nifty and Bank Nifty both) is hard-gated to the 2010+ VIX-covered window. No separate VIX-free extended-history mode using Bank Nifty's longer independent history (since 2003) or Nifty's (since ~1996). This window already spans multiple genuinely distinct market regimes (2013 taper tantrum, 2016 demonetization, 2018 IL&FS stress, 2020 COVID crash, 2022 rate-hike volatility) — sufficient to prove or disprove the core regime-stratified-validation thesis without the added complexity of a dual-pipeline system. A VIX-free extended mode remains a possible future enhancement, not current scope.
+- **Regime detection methodology:** Statistical Jump Model as primary (chosen over plain HMM/clustering for its explicit persistence penalty, which directly targets the flickering-state failure mode plain HMMs exhibit on imbalanced, limited-sample financial series). Gaussian HMM retained as a named baseline for comparison.
 
 ## 9. Open Questions Before Build Begins
 
 - Decide retraining cadence and how "drift into a new, previously unseen regime" will be detected and handled operationally.
-- Confirm exact historical depth achievable with clean, gap-free NSE archive data before locking the training window.
