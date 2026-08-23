@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS daily_bars (
     raw_file_ref TEXT NOT NULL,
     ingestion_run_id INTEGER REFERENCES ingestion_runs(id),
     is_corrected INTEGER NOT NULL DEFAULT 0,
-    superseded_by INTEGER REFERENCES daily_bars(id)
+    superseded_by INTEGER REFERENCES daily_bars(id),
+    notes TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_bars_instrument_date
@@ -67,11 +68,23 @@ CREATE VIEW IF NOT EXISTS current_bars AS
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive, idempotent schema migrations for DBs created before a column
+    existed. CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
+    table, so a new nullable column needs an explicit ALTER TABLE here.
+    """
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(daily_bars)")}
+    if "notes" not in existing_cols:
+        conn.execute("ALTER TABLE daily_bars ADD COLUMN notes TEXT")
+        conn.commit()
+
+
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -121,12 +134,17 @@ def insert_bar(
     source: str,
     raw_file_ref: str,
     ingestion_run_id: int,
+    notes: str | None = None,
 ) -> bool:
     """Insert one daily bar, skipping it if a non-superseded row for this
     (instrument, date) already exists. Shared by every ingestion path
     (fetch_niftyindices.py, the VIX manual loader) so "already loaded" means
     the same thing everywhere and every bar's provenance is recorded the same
     way, regardless of how it got here. Returns True if inserted, False if skipped.
+
+    `notes` is for the rare bar that needs its own permanent annotation - e.g. a
+    known data-quality anomaly in the source that was deliberately let through
+    rather than silently rejected or silently "corrected". Almost always None.
     """
     exists = conn.execute(
         "SELECT 1 FROM daily_bars "
@@ -139,12 +157,13 @@ def insert_bar(
         """
         INSERT INTO daily_bars
             (instrument_id, trade_date, open, high, low, close, volume,
-             source, ingested_at, raw_file_ref, ingestion_run_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             source, ingested_at, raw_file_ref, ingestion_run_id, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             instrument_id, trade_date, open_, high, low, close, volume,
             source, datetime.now(timezone.utc).isoformat(), raw_file_ref, ingestion_run_id,
+            notes,
         ),
     )
     return True
