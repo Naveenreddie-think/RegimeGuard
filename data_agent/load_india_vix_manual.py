@@ -43,6 +43,14 @@ the market traded normally and the gap is VIX-export-specific), the row is skipp
 and the verification evidence is recorded; if the signature doesn't match exactly,
 or the cross-check doesn't confirm normal trading, this still fails loudly like any
 other validation error rather than being silently skipped.
+
+A third, distinct case: KNOWN_CONFIRMED_UNAVAILABLE is for a date where NSE's VIX
+report has no row at all - not a zero-value row in an export (handled above), a date
+that was manually checked directly against NSE's live report and confirmed to have
+no value published. There's nothing to load or skip from a file for these; they're
+logged into ingestion_runs directly via log_confirmed_unavailable(), same audit-trail
+principle as every other exception here - a documented, verified absence, not a
+silent gap.
 """
 
 from __future__ import annotations
@@ -66,6 +74,23 @@ SOURCE_NAME = "nseindia.com (manual)"
 SYMBOL = "INDIAVIX"
 DISPLAY_NAME = "India VIX"
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "india_vix" / "manual"
+
+# Dates manually checked directly against NSE's live historical VIX report and
+# confirmed to have no published value - not inferred, not assumed. Each entry
+# names who/what confirmed it and why the date is special (cross-referenced against
+# calendar_days.KNOWN_SPECIAL_SESSIONS where relevant).
+KNOWN_CONFIRMED_UNAVAILABLE: dict[date, str] = {
+    date(2024, 3, 2): (
+        "Manually checked directly against NSE's historical VIX report page "
+        "(nseindia.com/reports-indices-historical-vix) - confirmed no value is "
+        "published for this date. This was the SEBI-mandated Disaster Recovery "
+        "site switchover drill day (two short live sessions, 9:15-10:00 and "
+        "11:30-12:30; see calendar_days.KNOWN_SPECIAL_SESSIONS) - Nifty 50 and "
+        "Bank Nifty both have real closes for it, but NSE evidently did not "
+        "compute/publish an India VIX value for this abbreviated session. A "
+        "genuine, verified absence, not an oversight on either side."
+    ),
+}
 
 COLUMN_ALIASES: dict[str, set[str]] = {
     "date": {"date"},
@@ -314,12 +339,56 @@ def load_india_vix_csv(csv_path: Path) -> dict:
     }
 
 
+def log_confirmed_unavailable(conn) -> list[date]:
+    """Write an ingestion_runs record for each KNOWN_CONFIRMED_UNAVAILABLE date not
+    already logged. No daily_bars row is written - there's nothing to load, this is
+    purely the audit trail for a verified absence. Returns the dates newly logged.
+    """
+    already_logged = {
+        row[0]
+        for row in conn.execute(
+            "SELECT date_range_requested FROM ingestion_runs "
+            "WHERE source = ? AND notes LIKE 'confirmed unavailable:%'",
+            (SOURCE_NAME,),
+        ).fetchall()
+    }
+    newly_logged = []
+    for d, reason in KNOWN_CONFIRMED_UNAVAILABLE.items():
+        range_key = f"{d.isoformat()}..{d.isoformat()}"
+        if range_key in already_logged:
+            continue
+        run_id = start_ingestion_run(conn, SOURCE_NAME, d, d)
+        finish_ingestion_run(conn, run_id, "success", f"confirmed unavailable: {reason}")
+        newly_logged.append(d)
+    return newly_logged
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Validate and load a manually-downloaded India VIX CSV"
     )
-    parser.add_argument("csv_path", type=Path)
+    parser.add_argument("csv_path", type=Path, nargs="?")
+    parser.add_argument(
+        "--log-unavailable", action="store_true",
+        help="Log KNOWN_CONFIRMED_UNAVAILABLE dates into ingestion_runs and exit",
+    )
     args = parser.parse_args()
+
+    if args.log_unavailable:
+        conn = get_connection()
+        try:
+            newly_logged = log_confirmed_unavailable(conn)
+        finally:
+            conn.close()
+        if newly_logged:
+            print(f"Logged {len(newly_logged)} confirmed-unavailable date(s): "
+                  f"{[d.isoformat() for d in newly_logged]}")
+        else:
+            print("No new confirmed-unavailable dates to log.")
+        return
+
+    if args.csv_path is None:
+        parser.error("csv_path is required unless --log-unavailable is passed")
 
     try:
         result = load_india_vix_csv(args.csv_path)

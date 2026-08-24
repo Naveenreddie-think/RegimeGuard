@@ -1,0 +1,52 @@
+{
+  "2013 taper tantrum": {
+    "dominant_regime": 0,
+    "dominant_share": 0.4625,
+    "n_days": 80,
+    "regime_breakdown": {
+      "0": 0.4625,
+      "1": 0.35,
+      "3": 0.175,
+      "2": 0.0125
+    }
+  },
+  "2016 demonetization": {
+    "dominant_regime": 0,
+    "dominant_share": 0.7368421052631579,
+    "n_days": 38,
+    "regime_breakdown": {
+      "0": 0.7368421052631579,
+      "1": 0.2631578947368421
+    }
+  },
+  "2018 IL&FS stress": {
+    "dominant_regime": 0,
+    "dominant_share": 0.6666666666666666,
+    "n_days": 39,
+    "regime_breakdown": {
+      "0": 0.6666666666666666,
+      "1": 0.20512820512820512,
+      "2": 0.1282051282051282
+    }
+  },
+  "2020 COVID crash": {
+    "dominant_regime": 0,
+    "dominant_share": 0.9705882352941176,
+    "n_days": 34,
+    "regime_breakdown": {
+      "0": 0.9705882352941176,
+      "1": 0.029411764705882353
+    }
+  },
+  "2022 rate-hike volatility": {
+    "dominant_regime": 3,
+    "dominant_share": 0.3819444444444444,
+    "n_days": 144,
+    "regime_breakdown": {
+      "3": 0.3819444444444444,
+      "0": 0.375,
+      "1": 0.16666666666666666,
+      "2": 0.0763888888888889
+    }
+  }
+}

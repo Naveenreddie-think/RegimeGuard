@@ -1,15 +1,23 @@
 """Exchange-level trading-calendar classification.
 
-Every weekday in the analysis window gets exactly one row: 'trading', 'holiday', or
-'outage'. This is what turns a date missing from daily_bars into an explicit,
-auditable fact instead of something requiring after-the-fact investigation, per
-proposal §2's gap-classification requirement. Weekends are intentionally excluded —
-they carry no ambiguity worth recording, and a weekday with no daily_bars row and a
-'trading' classification here is exactly the case find_unexplained_gaps() surfaces.
+Every calendar day in the analysis window gets exactly one row: 'trading', 'holiday',
+'outage', 'weekend_no_session', or 'special_session'. This is what turns a date
+missing from daily_bars into an explicit, auditable fact instead of something
+requiring after-the-fact investigation, per proposal §2's gap-classification
+requirement.
+
+**Weekends are covered, not skipped** (changed after 2024-03-02 was discovered
+missing from India VIX while having a real Nifty/Bank Nifty bar — see
+KNOWN_SPECIAL_SESSIONS below). Ordinary Saturdays/Sundays get 'weekend_no_session';
+the small number of dates NSE actually ran real trading on a weekend get
+'special_session'. find_unexplained_gaps() treats 'trading' and 'special_session'
+identically (both are dates real data is expected) — only 'weekend_no_session',
+'holiday', and 'outage' are exempt from that check.
 
 Primary source: pandas_market_calendars' XNSE calendar (community-maintained;
 actively corrected against real exchange changes — e.g. it has a tracked fix for the
-2024-05-20 India election-day closure).
+2024-05-20 India election-day closure). XNSE only models weekdays, so weekend
+classification (below) is entirely our own KNOWN_SPECIAL_SESSIONS list.
 
 Cross-checked against NSE's own published holiday circulars for the validation
 window (H2 2010) before trusting XNSE for the full pull:
@@ -88,11 +96,59 @@ KNOWN_SPECIAL_HOLIDAYS: dict[date, str] = {
     ),
 }
 
+# Every weekend date NSE actually ran real trading on, 2010-07-19 to present.
+# Compiled by querying daily_bars directly for every Sat/Sun with a real
+# Nifty/Bank Nifty bar (authoritative - this is literally what ended up in the
+# published historical index archive) rather than trying to enumerate NSE's
+# circulars from the outside, since SEBI mandates *monthly* mock-trading Saturdays
+# that mostly don't produce real archived index data - an external circular search
+# would be dominated by irrelevant mock sessions. 18 dates found this way; each is
+# categorized below with its confirming evidence, not asserted from the DB query
+# alone.
+#
+# Category A - Diwali Muhurat trading landing on a weekend (5 dates, each date
+# confirmed against independently-documented Lakshmi Puja dates for that year):
+# Category B - Union Budget Day special session landing on a weekend (4 dates, each
+# confirmed against the documented Budget presentation date for that year - the
+# last working day of February through 2016, 1 February from 2017 onward):
+# Category C - Disaster-Recovery/BCP site switchover drills or holiday-driven
+# reschedules (9 dates; 3 individually confirmed via direct news coverage, 6 from
+# 2012-2014 inferred by elimination - real weekend trading data exists, doesn't
+# match any Diwali or Budget date, consistent with NSE's long-documented DR-testing
+# practice, but no individual news citation was found for each - flagged as
+# lower-confidence than the other two categories, not asserted as equally certain).
+KNOWN_SPECIAL_SESSIONS: dict[date, str] = {
+    # --- Category A: Diwali Muhurat trading on a weekend ---
+    date(2013, 11, 3): "Diwali Muhurat trading (Diwali/Lakshmi Puja fell on Sun 3-Nov-2013).",
+    date(2016, 10, 30): "Diwali Muhurat trading (Diwali/Lakshmi Puja fell on Sun 30-Oct-2016).",
+    date(2019, 10, 27): "Diwali Muhurat trading (Diwali/Lakshmi Puja fell on Sun 27-Oct-2019).",
+    date(2020, 11, 14): "Diwali Muhurat trading (Diwali/Lakshmi Puja fell on Sat 14-Nov-2020).",
+    date(2023, 11, 12): "Diwali Muhurat trading (Diwali/Lakshmi Puja fell on Sun 12-Nov-2023), confirmed via direct news coverage.",
+    # --- Category B: Union Budget Day special session on a weekend ---
+    date(2015, 2, 28): "Union Budget Day special session (2015 Budget presented Sat 28-Feb-2015, the pre-2017 last-working-day-of-February convention).",
+    date(2020, 2, 1): "Union Budget Day special session (2020 Budget presented Sat 1-Feb-2020).",
+    date(2025, 2, 1): "Union Budget Day special session (2025 Budget presented Sat 1-Feb-2025), confirmed via direct news coverage.",
+    date(2026, 2, 1): "Union Budget Day special session (2026 Budget presented Sun 1-Feb-2026), confirmed via direct news coverage.",
+    # --- Category C: DR/BCP drills and holiday-reschedules ---
+    date(2024, 1, 20): "Trading day shifted from Mon 22-Jan-2024 (declared a holiday for the Ayodhya Ram Mandir consecration) to Sat 20-Jan-2024 to preserve the week's trading-day count. Confirmed via direct news coverage.",
+    date(2024, 3, 2): "SEBI-mandated Disaster Recovery site switchover drill - two live sessions (9:15-10:00, 11:30-12:30), intra-day primary-to-DR switchover in equity and equity derivatives. Confirmed via direct news coverage. This is the date that surfaced this whole gap - VIX was not found loaded for it (see resolution note below).",
+    date(2024, 5, 18): "SEBI-mandated Disaster Recovery site switchover drill. Confirmed via direct news coverage.",
+    date(2012, 1, 7): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2012. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+    date(2012, 3, 3): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2012. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+    date(2012, 4, 28): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2012. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+    date(2012, 9, 8): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2012. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+    date(2013, 5, 11): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2013. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+    date(2014, 3, 22): "Real Nifty/Bank Nifty trading data exists for this Saturday; doesn't match any Diwali or Budget date for 2014. Inferred as an early DR/BCP live-trading test - not individually news-confirmed.",
+}
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS calendar_days (
     trade_date TEXT PRIMARY KEY,
     day_type TEXT NOT NULL CHECK (
-        day_type IN ('trading', 'holiday', 'outage', 'unexplained_gap')
+        day_type IN (
+            'trading', 'holiday', 'outage', 'unexplained_gap',
+            'weekend_no_session', 'special_session'
+        )
     ),
     reason TEXT,
     source TEXT NOT NULL,
@@ -103,10 +159,35 @@ CREATE TABLE IF NOT EXISTS calendar_days (
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate_day_type_constraint(conn)
+
+
+def _migrate_day_type_constraint(conn: sqlite3.Connection) -> None:
+    """SQLite can't ALTER a CHECK constraint in place, so a DB created under the
+    old constraint (day_type without 'weekend_no_session'/'special_session') needs
+    its table rebuilt. Safe here specifically because calendar_days is documented
+    as a recomputable judgment, not append-only observational data (see
+    load_calendar_days docstring) - preserving existing rows via a rename-copy-drop
+    is just a mechanical fix for a constraint that's now too narrow, not a data
+    migration with any risk of losing something irreplaceable.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='calendar_days'"
+    ).fetchone()
+    if row is None or "special_session" in row[0]:
+        return  # table doesn't exist yet, or already has the current constraint
+    conn.execute("ALTER TABLE calendar_days RENAME TO calendar_days_old")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO calendar_days (trade_date, day_type, reason, source, verified_at) "
+        "SELECT trade_date, day_type, reason, source, verified_at FROM calendar_days_old"
+    )
+    conn.execute("DROP TABLE calendar_days_old")
+    conn.commit()
 
 
 def classify_range(start: date, end: date) -> list[dict]:
-    """Classify every weekday in [start, end]. See module docstring for sourcing."""
+    """Classify every calendar day in [start, end]. See module docstring for sourcing."""
     cal = mcal.get_calendar(XNSE_CALENDAR_NAME)
     schedule = cal.schedule(start_date=start.isoformat(), end_date=end.isoformat())
     trading_days = {d.date() for d in schedule.index}
@@ -115,11 +196,13 @@ def classify_range(start: date, end: date) -> list[dict]:
     rows: list[dict] = []
     current = start
     while current <= end:
-        if current.weekday() >= 5:  # Saturday / Sunday
-            current += timedelta(days=1)
-            continue
+        is_weekend = current.weekday() >= 5
         if current in KNOWN_OUTAGE_DAYS:
             day_type, reason = "outage", KNOWN_OUTAGE_DAYS[current]
+        elif current in KNOWN_SPECIAL_SESSIONS:
+            day_type, reason = "special_session", KNOWN_SPECIAL_SESSIONS[current]
+        elif is_weekend:
+            day_type, reason = "weekend_no_session", None
         elif current in KNOWN_SPECIAL_HOLIDAYS:
             day_type, reason = "holiday", KNOWN_SPECIAL_HOLIDAYS[current]
         elif current in trading_days:
@@ -193,11 +276,18 @@ def load_calendar_days(conn: sqlite3.Connection, start: date, end: date) -> int:
 
 
 def find_unexplained_gaps(conn: sqlite3.Connection, instrument_id: int, start: date, end: date) -> list[str]:
-    """Trading days (per calendar_days) with no daily_bars row for this instrument.
+    """Trading days *and special sessions* (per calendar_days) with no daily_bars
+    row for this instrument.
 
     This is the real gap-classification check: calendar_days on its own only says
     what the exchange calendar expects; this join is what catches an actual silent
-    data gap (calendar says trading, but our fetch has nothing for that date).
+    data gap (calendar says data should exist, but our fetch has nothing for that
+    date). 'special_session' is included alongside 'trading' - a Saturday NSE
+    genuinely traded on (e.g. a DR drill) is exactly as much a "should have data"
+    date as an ordinary weekday, which is how 2024-03-02 was caught in the first
+    place. 'weekend_no_session', 'holiday', and 'outage' are excluded - a missing
+    bar on an ordinary weekend or a scheduled holiday isn't a gap at all, and an
+    outage day is a known, separately-flagged anomaly rather than a plain gap.
     """
     rows = conn.execute(
         """
@@ -207,7 +297,7 @@ def find_unexplained_gaps(conn: sqlite3.Connection, instrument_id: int, start: d
             ON b.trade_date = c.trade_date
             AND b.instrument_id = ?
             AND b.superseded_by IS NULL
-        WHERE c.day_type = 'trading'
+        WHERE c.day_type IN ('trading', 'special_session')
           AND c.trade_date BETWEEN ? AND ?
           AND b.id IS NULL
         ORDER BY c.trade_date

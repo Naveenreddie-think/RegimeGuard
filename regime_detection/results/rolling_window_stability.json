@@ -1,0 +1,284 @@
+[
+  {
+    "k": 3,
+    "model": "jm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.43806262096459136,
+        "edge_ari": 0.6696628128501679,
+        "trunc_dominant_state_raw": 1,
+        "trunc_dominant_state_aligned_to_full": 1,
+        "full_dominant_state": 2,
+        "interpretability_pass": false,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.5878251470185369,
+        "edge_ari": 0.4016424872126397,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.5594394416324371,
+        "edge_ari": -0.08330518444317613,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.9686515848216394,
+        "edge_ari": 0.35591991166928477,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      }
+    }
+  },
+  {
+    "k": 4,
+    "model": "jm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.5553419482958114,
+        "edge_ari": 0.864379557933706,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.712954217007175,
+        "edge_ari": 1.0,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.7564514696635152,
+        "edge_ari": 0.17027885260034956,
+        "trunc_dominant_state_raw": 3,
+        "trunc_dominant_state_aligned_to_full": 3,
+        "full_dominant_state": 3,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.7807913270312393,
+        "edge_ari": 0.6367653215214895,
+        "trunc_dominant_state_raw": 3,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 1,
+        "interpretability_pass": false,
+        "passed": false
+      }
+    }
+  },
+  {
+    "k": 5,
+    "model": "jm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.695959816383321,
+        "edge_ari": 1.0,
+        "trunc_dominant_state_raw": 3,
+        "trunc_dominant_state_aligned_to_full": 3,
+        "full_dominant_state": 3,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.5265876952338009,
+        "edge_ari": 0.8528237970096045,
+        "trunc_dominant_state_raw": 3,
+        "trunc_dominant_state_aligned_to_full": 3,
+        "full_dominant_state": 3,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.766910113387643,
+        "edge_ari": 0.2072232569438821,
+        "trunc_dominant_state_raw": 4,
+        "trunc_dominant_state_aligned_to_full": 4,
+        "full_dominant_state": 4,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.41445990966725166,
+        "edge_ari": 0.0,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 3,
+        "full_dominant_state": 1,
+        "interpretability_pass": false,
+        "passed": false
+      }
+    }
+  },
+  {
+    "k": 3,
+    "model": "hmm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.5963366065832431,
+        "edge_ari": 0.5723526754507849,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.6007078236805153,
+        "edge_ari": 0.5424677297659025,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.6294336192087058,
+        "edge_ari": 0.8006098699359014,
+        "trunc_dominant_state_raw": 0,
+        "trunc_dominant_state_aligned_to_full": 2,
+        "full_dominant_state": 2,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.6482725926526567,
+        "edge_ari": 0.7624267319549316,
+        "trunc_dominant_state_raw": 0,
+        "trunc_dominant_state_aligned_to_full": 1,
+        "full_dominant_state": 2,
+        "interpretability_pass": false,
+        "passed": false
+      }
+    }
+  },
+  {
+    "k": 4,
+    "model": "hmm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.8100501900527751,
+        "edge_ari": 0.6786893939017257,
+        "trunc_dominant_state_raw": 1,
+        "trunc_dominant_state_aligned_to_full": 1,
+        "full_dominant_state": 1,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.6579297324541449,
+        "edge_ari": 0.6659786779665301,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 1,
+        "full_dominant_state": 1,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.4816601003089108,
+        "edge_ari": 0.16887902966116855,
+        "trunc_dominant_state_raw": 0,
+        "trunc_dominant_state_aligned_to_full": 1,
+        "full_dominant_state": 1,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.7427433262154594,
+        "edge_ari": 0.8304213424862759,
+        "trunc_dominant_state_raw": 1,
+        "trunc_dominant_state_aligned_to_full": 3,
+        "full_dominant_state": 0,
+        "interpretability_pass": false,
+        "passed": false
+      }
+    }
+  },
+  {
+    "k": 5,
+    "model": "hmm",
+    "overall_pass": false,
+    "cutoffs": {
+      "2016-12-31": {
+        "window_tested": "2016 demonetization",
+        "interior_ari": 0.5886262584885051,
+        "edge_ari": 0.5059951006081391,
+        "trunc_dominant_state_raw": 0,
+        "trunc_dominant_state_aligned_to_full": 4,
+        "full_dominant_state": 4,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2018-12-31": {
+        "window_tested": "2018 IL&FS stress",
+        "interior_ari": 0.6998439665596392,
+        "edge_ari": 0.6552979812221708,
+        "trunc_dominant_state_raw": 3,
+        "trunc_dominant_state_aligned_to_full": 0,
+        "full_dominant_state": 0,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2020-06-30": {
+        "window_tested": "2020 COVID crash",
+        "interior_ari": 0.4906932558502537,
+        "edge_ari": 0.33801992299073874,
+        "trunc_dominant_state_raw": 2,
+        "trunc_dominant_state_aligned_to_full": 0,
+        "full_dominant_state": 0,
+        "interpretability_pass": true,
+        "passed": false
+      },
+      "2022-12-31": {
+        "window_tested": "2022 rate-hike volatility",
+        "interior_ari": 0.7925748773803009,
+        "edge_ari": 0.5222423120421262,
+        "trunc_dominant_state_raw": 1,
+        "trunc_dominant_state_aligned_to_full": 4,
+        "full_dominant_state": 3,
+        "interpretability_pass": false,
+        "passed": false
+      }
+    }
+  }
+]
