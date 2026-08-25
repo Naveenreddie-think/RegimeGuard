@@ -1,0 +1,7 @@
+test,p_value,bh_threshold,reject_null
+model_vs_baseline,0.008,0.008333333333333333,True
+regime_spread,0.0275,0.016666666666666666,False
+regime_0_mean_pnl,0.072,0.025,False
+overall_mean_pnl,0.533,0.03333333333333333,False
+regime_1_mean_pnl,0.829,0.04166666666666667,False
+regime_2_mean_pnl,0.97,0.05,False

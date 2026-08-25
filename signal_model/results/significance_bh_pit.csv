@@ -1,0 +1,5 @@
+test,p_value,bh_threshold,reject_null
+regime_spread_pit,0.0005,0.0125,True
+regime_0_mean_pnl_pit,0.443,0.025,False
+regime_1_mean_pnl_pit,0.541,0.037500000000000006,False
+regime_2_mean_pnl_pit,0.848,0.05,False
