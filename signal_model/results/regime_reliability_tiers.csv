@@ -1,0 +1,4 @@
+regime,character,n_eval,pit_oof_accuracy,is_highest_accuracy,perm_p_value,perm_survives_bh,acc_lead_over_weakest,perm_null_p95_spread,lead_exceeds_null_p95,tier
+0,calm uptrend,1394,0.3013,False,0.0005,True,0.1003,0.059,True,none
+1,volatile rally,871,0.3421,False,0.0005,True,0.1003,0.059,True,none
+2,risk-off / drawdown,615,0.4016,True,0.0005,True,0.1003,0.059,True,monitored

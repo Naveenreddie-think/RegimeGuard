@@ -44,12 +44,14 @@ from __future__ import annotations
 
 import sqlite3
 
+import numpy as np
 import pandas as pd
 from jumpmodels.jump import JumpModel
 from jumpmodels.preprocess import DataClipperStd, StandardScalerPD
 
 from regime_detection.features import FEATURE_COLUMNS, build_feature_matrix
 from regime_detection.regime_db import ensure_schema, save_model_version, save_regime_labels
+from regime_detection.rolling_window_stability import WARM_UP_EDGE_DAYS
 
 K = 3
 JUMP_PENALTY = 50.0
@@ -156,3 +158,104 @@ def load_point_in_time_labels(conn: sqlite3.Connection, quarterly_version_ids: l
     params = list(quarterly_version_ids) * 2
     result = pd.read_sql_query(query, conn, params=params, parse_dates=["trade_date"])
     return result.set_index("trade_date")["regime"]
+
+
+def point_in_time_regime_label(conn: sqlite3.Connection, model_version: dict, as_of) -> dict:
+    """The point-in-time regime label for `as_of` under a single registered
+    model_version - the fit-fixed predict-forward step from `run_quarterly_walk`,
+    factored out so `decide_todays_call` can run it against whatever version is
+    active for an arbitrary date.
+
+    The JM's fitted `centers_` / `jump_penalty_mx` are not persisted in
+    `model_versions`, so this deterministically RE-FITS the same config through the
+    version's own `fit_end_date` (random_state=0, ~1s) to recover them - a
+    reconstruction of an already-registered version, not a new model. It asserts the
+    reconstructed clip+scale stats match the version's stored ones, and (where a
+    stored label exists for `as_of`) that the reconstructed label matches it, same
+    verify-don't-assume discipline as Phase 3's alignment check.
+
+    Then, using ONLY that fit's fixed parameters and its own scaler's `.transform()`,
+    it decodes the label sequence through `as_of` (batch Viterbi, the same reviewed
+    compromise as the quarterly walk: an early date in the gap can be informed by a
+    later date in the same gap, never by a later recalibration).
+
+    Returns the current regime, its trailing run length in trading days, and the
+    M6 out-of-distribution check inputs (distance from `as_of`'s standardized vector
+    to the nearest state centroid, vs. the max such distance over the fit's own
+    interior dates).
+    """
+    df = build_feature_matrix(conn)
+    fit_df = df.loc[~df["warm_up"]]
+    X_raw_full = fit_df[FEATURE_COLUMNS]
+    ret_ser_full = fit_df["ret_5"]
+
+    as_of = pd.Timestamp(as_of)
+    available = X_raw_full.index[X_raw_full.index <= as_of]
+    if len(available) == 0:
+        raise ValueError(f"as_of {as_of.date()} precedes the first feature row {X_raw_full.index[0].date()}")
+    as_of = available[-1]
+
+    fit_end = pd.Timestamp(model_version["fit_end_date"])
+    k = int(model_version["k"])
+    jump_penalty = float(model_version["jump_penalty"])
+
+    X_raw_fit = X_raw_full.loc[:fit_end]
+    ret_fit = ret_ser_full.loc[:fit_end]
+
+    clipper = DataClipperStd(mul=3.0)
+    scaler = StandardScalerPD()
+    X_fit = scaler.fit_transform(clipper.fit_transform(X_raw_fit))
+
+    stored_mean = np.asarray(model_version["scaler_mean"], dtype=float)
+    if not np.allclose(scaler.scaler.mean_, stored_mean, atol=1e-8):
+        raise AssertionError(
+            f"reconstructed scaler stats differ from model_version {model_version['id']}'s stored stats"
+        )
+
+    jm = JumpModel(n_components=k, jump_penalty=jump_penalty, cont=False, random_state=0)
+    jm.fit(X_fit, ret_ser=ret_fit, sort_by="cumret")
+
+    X_thru = scaler.transform(clipper.transform(X_raw_full.loc[:as_of]))
+    labels = pd.Series(jm.predict(X_thru), index=X_thru.index)
+    current = int(labels.loc[as_of])
+
+    values = labels.to_numpy()
+    run_length = 1
+    for i in range(len(values) - 2, -1, -1):
+        if values[i] == values[-1]:
+            run_length += 1
+        else:
+            break
+
+    centers = np.asarray(jm.centers_, dtype=float)
+    z_as_of = X_thru.loc[as_of].to_numpy(dtype=float)
+    min_dist_to_centroid = float(np.min(np.linalg.norm(centers - z_as_of, axis=1)))
+
+    interior_idx = X_fit.index[:-WARM_UP_EDGE_DAYS] if len(X_fit) > WARM_UP_EDGE_DAYS else X_fit.index
+    z_interior = X_fit.loc[interior_idx].to_numpy(dtype=float)
+    interior_min_dists = np.min(
+        np.linalg.norm(z_interior[:, None, :] - centers[None, :, :], axis=2), axis=1
+    )
+    ood_threshold = float(interior_min_dists.max())
+
+    stored = conn.execute(
+        "SELECT regime FROM regime_labels WHERE trade_date = ? AND model_version_id = ? "
+        "AND superseded_by IS NULL",
+        (as_of.date().isoformat(), model_version["id"]),
+    ).fetchone()
+    if stored is not None and int(stored[0]) != current:
+        raise AssertionError(
+            f"reconstructed PIT label {current} != stored label {stored[0]} for {as_of.date()} "
+            f"(model_version {model_version['id']})"
+        )
+
+    return {
+        "regime": current,
+        "run_length_td": run_length,
+        "as_of": as_of.date(),
+        "source": "in_sample" if as_of <= fit_end else "predict_forward",
+        "n_fit_rows": len(X_raw_fit),
+        "min_dist_to_centroid": min_dist_to_centroid,
+        "ood_threshold": ood_threshold,
+        "is_ood": bool(min_dist_to_centroid > ood_threshold),
+    }
