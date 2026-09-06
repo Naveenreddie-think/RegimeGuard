@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import subprocess
 import uuid
@@ -111,12 +112,19 @@ class RegimeGuardCall:
 
 
 def _code_rev() -> str | None:
+    """Short git SHA for the audit trail. Falls back to REGIMEGUARD_CODE_REV when git
+    is unavailable - e.g. a deployed container whose image was built without the .git
+    directory (Phase 6): the deploy sets that env var so provenance still lands in
+    agent_call_log / todays_call_log."""
     try:
-        return subprocess.run(
+        rev = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5
-        ).stdout.strip() or None
+        ).stdout.strip()
+        if rev:
+            return rev
     except Exception:
-        return None
+        pass
+    return os.environ.get("REGIMEGUARD_CODE_REV") or None
 
 
 def trailing_vix_percentile(conn, as_of: pd.Timestamp) -> float:

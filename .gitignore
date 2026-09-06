@@ -8,3 +8,10 @@ venv/
 .venv/
 *.egg-info/
 .pytest_cache/
+
+# The SQLite store is not tracked: the Modal Volume (regimeguard-data) is the
+# source of truth in deployment. Recreate a local copy with the seed procedure in
+# docs/phase6_deployment.md.
+data/regimeguard.db
+data/regimeguard.db-wal
+data/regimeguard.db-shm
