@@ -189,7 +189,7 @@ def point_in_time_regime_label(conn: sqlite3.Connection, model_version: dict, as
     X_raw_full = fit_df[FEATURE_COLUMNS]
     ret_ser_full = fit_df["ret_5"]
 
-    as_of = pd.Timestamp(as_of)
+    as_of = X_raw_full.index[-1] if as_of is None else pd.Timestamp(as_of)
     available = X_raw_full.index[X_raw_full.index <= as_of]
     if len(available) == 0:
         raise ValueError(f"as_of {as_of.date()} precedes the first feature row {X_raw_full.index[0].date()}")
@@ -218,6 +218,8 @@ def point_in_time_regime_label(conn: sqlite3.Connection, model_version: dict, as
     X_thru = scaler.transform(clipper.transform(X_raw_full.loc[:as_of]))
     labels = pd.Series(jm.predict(X_thru), index=X_thru.index)
     current = int(labels.loc[as_of])
+
+    td_since_fit = int(((X_raw_full.index > fit_end) & (X_raw_full.index <= as_of)).sum())
 
     values = labels.to_numpy()
     run_length = 1
@@ -252,7 +254,8 @@ def point_in_time_regime_label(conn: sqlite3.Connection, model_version: dict, as
     return {
         "regime": current,
         "run_length_td": run_length,
-        "as_of": as_of.date(),
+        "as_of": as_of.date().isoformat(),
+        "td_since_fit": td_since_fit,
         "source": "in_sample" if as_of <= fit_end else "predict_forward",
         "n_fit_rows": len(X_raw_fit),
         "min_dist_to_centroid": min_dist_to_centroid,

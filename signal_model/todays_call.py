@@ -26,6 +26,7 @@ import argparse
 import json
 import sqlite3
 import subprocess
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -71,13 +72,23 @@ CREATE TABLE IF NOT EXISTS todays_call_log (
     tier1_drift_mean REAL,
     trading_days_since_fit INTEGER,
     record_json TEXT NOT NULL,
-    code_rev TEXT
+    code_rev TEXT,
+    trace_id TEXT,
+    prev_hash TEXT,
+    row_hash TEXT
 );
 """
 
 
 def ensure_log_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(LOG_SCHEMA)
+    """Create todays_call_log if absent. Skipped when it already exists so this is
+    safe to call on a capability-scoped connection (which denies all DDL) - the
+    table is normally created once by agents.bootstrap."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='todays_call_log'"
+    ).fetchone()
+    if not exists:
+        conn.executescript(LOG_SCHEMA)
 
 
 @dataclass
@@ -108,7 +119,7 @@ def _code_rev() -> str | None:
         return None
 
 
-def _trailing_vix_percentile(conn, as_of: pd.Timestamp) -> float:
+def trailing_vix_percentile(conn, as_of: pd.Timestamp) -> float:
     vix = build_feature_matrix(conn)["vix_close"]
     trailing = vix.loc[:as_of]
     return float((trailing <= trailing.iloc[-1]).mean())
@@ -118,9 +129,9 @@ def _trading_days_between(index: pd.DatetimeIndex, start: pd.Timestamp, end: pd.
     return int(((index > start) & (index <= end)).sum())
 
 
-def _monitored_pattern_text(tiers_df: pd.DataFrame, regime_id: int) -> dict:
-    row = tiers_df.loc[tiers_df["regime"] == regime_id].iloc[0]
-    weakest = tiers_df["pit_oof_accuracy"].min()
+def _monitored_pattern_text(tiers_records: list[dict], regime_id: int) -> dict:
+    row = next(r for r in tiers_records if int(r["regime"]) == regime_id)
+    weakest = min(r["pit_oof_accuracy"] for r in tiers_records)
     return {
         "statement": (
             f"regime_{regime_id} ({row['character']}) shows a statistically significant "
@@ -137,22 +148,17 @@ def _monitored_pattern_text(tiers_df: pd.DataFrame, regime_id: int) -> dict:
     }
 
 
-def decide_todays_call(
+def gather_inputs(
     conn: sqlite3.Connection,
     as_of: date | None = None,
     regime_model_version_id: int | None = None,
-    log: bool = True,
-) -> RegimeGuardCall:
-    """Combined confidence/abstention decision for `as_of` (default: latest feature row).
-
-    `regime_model_version_id` overrides which registered regime version is treated as
-    active - default (None) uses `get_active_model_version` (the live path). Passing a
-    historical version reconstructs "what a live system would have decided then", for
-    testing and for after-the-fact audit.
-
-    `log=True` (default) appends the record to `todays_call_log` - every real call is
-    logged; pass `log=False` for dry runs.
-    """
+) -> dict:
+    """The DIRECT-path gather: resolve `as_of`, the active regime version, the
+    point-in-time regime label, the drift snapshot, the trailing VIX percentile, the
+    reliability tiers, and any registered signal prediction - all as JSON-safe plain
+    values. `agents/orchestrator.py` produces a dict of the identical shape via MCP
+    tool calls; both feed `assemble_regimeguard_call`, so the M1-M6 decision logic
+    has exactly one implementation."""
     feat = build_feature_matrix(conn)
     dates = feat.loc[~feat["warm_up"]].index
     as_of_ts = dates[-1] if as_of is None else pd.Timestamp(as_of)
@@ -168,26 +174,50 @@ def decide_todays_call(
     else:
         mv = load_model_version(conn, regime_model_version_id)
 
-    # --- (2) point-in-time regime + run length + OOD inputs ---
     reg = point_in_time_regime_label(conn, mv, as_of_ts)
-    regime_id = reg["regime"]
-    fit_end = pd.Timestamp(mv["fit_end_date"])
-    td_since_fit = _trading_days_between(dates, fit_end, as_of_ts)
+    trig = check_recalibration_trigger(conn, mv["id"])
+    tier2 = trig.get("tier2")
+
+    return {
+        "as_of_date": as_of_ts.date().isoformat(),
+        "regime_version": {"id": int(mv["id"]), "fit_end_date": str(mv["fit_end_date"])},
+        "reg": {k: reg[k] for k in (
+            "regime", "run_length_td", "source", "n_fit_rows",
+            "min_dist_to_centroid", "ood_threshold", "is_ood",
+        )},
+        "monitoring": {
+            "tier1_mean": float(trig["tier1"]["mean_drift"]),
+            "tier1_fires": bool(trig["tier1"]["fires"]),
+            "tier2_ari": (tier2.get("interior_ari") if tier2 else None),
+        },
+        "vix_pct": trailing_vix_percentile(conn, as_of_ts),
+        "td_since_fit": int(reg["td_since_fit"]),
+        "tiers_records": pd.read_csv(TIERS_CSV).to_dict("records"),
+        "signal_pred": load_signal_prediction(conn, as_of_ts.date()),
+    }
+
+
+def assemble_regimeguard_call(inputs: dict, *, generated_at: str, code_rev: str | None) -> RegimeGuardCall:
+    """PURE. The single implementation of the M1-M6 tier/disposition logic and the
+    `RegimeGuardCall` record. Deterministic given `inputs` + `generated_at` + `code_rev`
+    - no DB, no clock, no filesystem. Both `decide_todays_call` (direct) and
+    `agents/orchestrator.todays_call` (MCP) call this with a dict of the same shape."""
+    as_of_date = inputs["as_of_date"]
+    mv_id = inputs["regime_version"]["id"]
+    fit_end_date = inputs["regime_version"]["fit_end_date"]
+    reg = inputs["reg"]
+    regime_id = int(reg["regime"])
+    td_since_fit = int(inputs["td_since_fit"])
     in_edge_zone = 0 <= td_since_fit <= EDGE_ZONE_TD
 
-    # --- (3) monitoring snapshot ---
-    trig = check_recalibration_trigger(conn, mv["id"])
-    tier1 = trig["tier1"]
-    tier2 = trig.get("tier2")
-    tier2_ari = tier2.get("interior_ari") if tier2 else None
-    tier1_mean = float(tier1["mean_drift"])
-    tier1_fires = bool(tier1["fires"])
+    tier1_mean = float(inputs["monitoring"]["tier1_mean"])
+    tier1_fires = bool(inputs["monitoring"]["tier1_fires"])
+    tier2_ari = inputs["monitoring"]["tier2_ari"]
+    vix_pct = float(inputs["vix_pct"])
+    tiers_records = inputs["tiers_records"]
+    signal_pred = inputs["signal_pred"]
 
-    vix_pct = _trailing_vix_percentile(conn, as_of_ts)
-
-    # --- (5) base tier ---
-    tiers_df = pd.read_csv(TIERS_CSV)
-    base_tier = dict(zip(tiers_df["regime"].astype(int), tiers_df["tier"])).get(regime_id, "none")
+    base_tier = {int(r["regime"]): r["tier"] for r in tiers_records}.get(regime_id, "none")
 
     # --- (6) modifiers M1-M6 (downgrade-only) ---
     modifiers: list[tuple[str, str]] = []
@@ -246,7 +276,7 @@ def decide_todays_call(
 
     # --- regime_pattern (always present) ---
     if reliability_tier in ("monitored", "suppressed"):
-        pat = _monitored_pattern_text(tiers_df, regime_id)
+        pat = _monitored_pattern_text(tiers_records, regime_id)
         regime_pattern = {"applies_now": disposition == "INFORMATIONAL", **pat}
     else:
         regime_pattern = {
@@ -257,7 +287,7 @@ def decide_todays_call(
     # --- (8) directional lean (INFORMATIONAL only; signal staleness never changes disposition) ---
     directional_lean = None
     if disposition == "INFORMATIONAL":
-        pred = load_signal_prediction(conn, as_of_ts.date())
+        pred = signal_pred
         if pred is None:
             directional_lean = {
                 "note": "INFORMATIONAL ONLY - not a trade recommendation",
@@ -298,13 +328,13 @@ def decide_todays_call(
         recal_flag = "overdue"
 
     record = RegimeGuardCall(
-        as_of_date=as_of_ts.date().isoformat(),
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        as_of_date=as_of_date,
+        generated_at=generated_at,
         regime={
             "point_in_time_id": regime_id,
             "character": REGIME_CHARACTER.get(regime_id, "unknown"),
-            "active_model_version_id": mv["id"],
-            "model_fit_through": mv["fit_end_date"],
+            "active_model_version_id": mv_id,
+            "model_fit_through": fit_end_date,
             "run_length_trading_days": reg["run_length_td"],
             "label_source": reg["source"],
             "fit_rows": reg["n_fit_rows"],
@@ -347,38 +377,62 @@ def decide_todays_call(
                 "is_ood": reg["is_ood"],
             },
             "regime_reliability_tiers_ref": str(TIERS_CSV.name),
-            "code_rev": _code_rev(),
+            "code_rev": code_rev,
         },
+    )
+    return record
+
+
+def decide_todays_call(
+    conn: sqlite3.Connection,
+    as_of: date | None = None,
+    regime_model_version_id: int | None = None,
+    log: bool = True,
+) -> RegimeGuardCall:
+    """Combined confidence/abstention decision for `as_of` (default: latest feature row),
+    the DIRECT (non-agent) path: `gather_inputs` -> `assemble_regimeguard_call`.
+
+    `regime_model_version_id` overrides which registered regime version is treated as
+    active - default (None) uses `get_active_model_version` (the live path). Passing a
+    historical version reconstructs "what a live system would have decided then".
+
+    `log=True` (default) appends the record to the hash-chained `todays_call_log`.
+    """
+    inputs = gather_inputs(conn, as_of, regime_model_version_id)
+    record = assemble_regimeguard_call(
+        inputs, generated_at=datetime.now(timezone.utc).isoformat(), code_rev=_code_rev()
     )
     if log:
         record.audit["log_id"] = append_to_log(conn, record)
     return record
 
 
-def append_to_log(conn: sqlite3.Connection, record: RegimeGuardCall) -> int:
+def append_to_log(conn: sqlite3.Connection, record: RegimeGuardCall, trace_id: str | None = None) -> int:
+    """Append the record to the SHA-256-hash-chained `todays_call_log` (design §3).
+    Same writer for the direct and the orchestrator path. `trace_id` links the row to
+    an `agent_call_log` trace; a uuid is generated for the direct path if omitted."""
+    from agents.audit import chain_append  # lazy: agents/ imports signal_model/, not the reverse
+
     ensure_log_schema(conn)
     d = record.to_dict()
     lean = d["directional_lean"]["direction"] if d["directional_lean"] else None
-    cur = conn.execute(
-        """
-        INSERT INTO todays_call_log
-            (as_of_date, generated_at, disposition, reliability_tier, actionable,
-             regime_pit_id, regime_model_version_id, signal_model_version_id,
-             directional_lean, abstention_reasons, tier1_drift_mean, trading_days_since_fit,
-             record_json, code_rev)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            d["as_of_date"], d["generated_at"], d["disposition"], d["reliability_tier"],
-            int(d["actionable"]), d["regime"]["point_in_time_id"], d["regime"]["active_model_version_id"],
-            (d["directional_lean"] or {}).get("signal_model_version_id"),
-            lean, json.dumps(d["abstention"]["reasons"]) if d["abstention"] else None,
-            d["monitoring"]["tier1_drift_mean"], d["monitoring"]["trading_days_since_fit"],
-            json.dumps(d), d["audit"]["code_rev"],
-        ),
-    )
-    conn.commit()
-    return cur.lastrowid
+    return chain_append(conn, "todays_call_log", {
+        "as_of_date": d["as_of_date"],
+        "generated_at": d["generated_at"],
+        "disposition": d["disposition"],
+        "reliability_tier": d["reliability_tier"],
+        "actionable": int(d["actionable"]),
+        "regime_pit_id": d["regime"]["point_in_time_id"],
+        "regime_model_version_id": d["regime"]["active_model_version_id"],
+        "signal_model_version_id": (d["directional_lean"] or {}).get("signal_model_version_id"),
+        "directional_lean": lean,
+        "abstention_reasons": json.dumps(d["abstention"]["reasons"]) if d["abstention"] else None,
+        "tier1_drift_mean": d["monitoring"]["tier1_drift_mean"],
+        "trading_days_since_fit": d["monitoring"]["trading_days_since_fit"],
+        "record_json": json.dumps(d),
+        "code_rev": d["audit"]["code_rev"],
+        "trace_id": trace_id or f"direct-{uuid.uuid4().hex[:12]}",
+    })
 
 
 def main() -> None:
